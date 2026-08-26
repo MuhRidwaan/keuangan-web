@@ -28,6 +28,10 @@ import {
   Pie,
   Cell,
   Legend,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
 } from 'recharts';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -44,6 +48,8 @@ export default function DashboardPage() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [loading, setLoading] = useState(true);
   const [chartTimeframe, setChartTimeframe] = useState<'daily' | 'monthly'>('daily');
+  const [categoryChartType, setCategoryChartType] = useState<'all' | 'expense' | 'income'>('all');
+  const [categoryChartMode, setCategoryChartMode] = useState<'bar' | 'line'>('line');
 
   // Date Range Filter State
   const [startDate, setStartDate] = useState<string>('');
@@ -127,6 +133,77 @@ export default function DashboardPage() {
     });
   const pieData = Object.values(categoryMap);
   const PIE_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#06b6d4', '#ec4899'];
+
+  // Category-wise totals for Bar Chart
+  const categoryChartMap: Record<string, { category: string; amount: number; type: 'income' | 'expense' }> = {};
+  filteredTransactions.forEach((t) => {
+    const catName = t.category?.name || 'Lainnya';
+    const type = t.category?.type || 'expense';
+    if (!categoryChartMap[catName]) {
+      categoryChartMap[catName] = { category: catName, amount: 0, type };
+    }
+    categoryChartMap[catName].amount += Number(t.amount || 0);
+  });
+
+  const categoryChartData = Object.values(categoryChartMap)
+    .filter((c) => {
+      if (categoryChartType === 'expense') return c.type === 'expense';
+      if (categoryChartType === 'income') return c.type === 'income';
+      return true;
+    })
+    .sort((a, b) => b.amount - a.amount);
+
+  // Category Trend Data for Line Chart (by date/month)
+  const uniqueCategories = Array.from(
+    new Set(
+      filteredTransactions
+        .filter((t) => {
+          if (categoryChartType === 'expense') return t.category?.type === 'expense';
+          if (categoryChartType === 'income') return t.category?.type === 'income';
+          return true;
+        })
+        .map((t) => t.category?.name || 'Lainnya')
+    )
+  );
+
+  const categoryTrendMap: Record<string, { dateKey: string; label: string; [catName: string]: any }> = {};
+  filteredTransactions.forEach((tx) => {
+    if (categoryChartType === 'expense' && tx.category?.type !== 'expense') return;
+    if (categoryChartType === 'income' && tx.category?.type !== 'income') return;
+
+    const rawDate = tx.date ? tx.date.split('T')[0] : '';
+    if (!rawDate) return;
+
+    let dateKey = '';
+    let label = '';
+
+    if (chartTimeframe === 'daily') {
+      dateKey = rawDate;
+      const d = new Date(rawDate);
+      label = isNaN(d.getTime())
+        ? rawDate
+        : new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short' }).format(d);
+    } else {
+      const d = new Date(rawDate);
+      if (isNaN(d.getTime())) return;
+      dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      label = new Intl.DateTimeFormat('id-ID', { month: 'short', year: 'numeric' }).format(d);
+    }
+
+    if (!categoryTrendMap[dateKey]) {
+      categoryTrendMap[dateKey] = { dateKey, label };
+      // Initialize all unique categories to 0
+      uniqueCategories.forEach((cat) => {
+        categoryTrendMap[dateKey][cat] = 0;
+      });
+    }
+
+    const catName = tx.category?.name || 'Lainnya';
+    categoryTrendMap[dateKey][catName] = (categoryTrendMap[dateKey][catName] || 0) + Number(tx.amount || 0);
+  });
+
+  const categoryTrendData = Object.values(categoryTrendMap)
+    .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
   // Real Daily Cash Flow Aggregation (Per Tanggal)
   const dailyMap: Record<string, { dateKey: string; label: string; Pemasukan: number; Pengeluaran: number }> = {};
@@ -359,88 +436,138 @@ export default function DashboardPage() {
 
       {/* Analytics Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Income vs Expense Smooth Wave Area Chart (2 cols) */}
+        {/* Category Analysis Bar Chart (2 cols) */}
         <Card className="lg:col-span-2">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                Arus Kas Gelombang ({chartTimeframe === 'daily' ? 'Per Tanggal' : 'Per Bulan'})
+                Grafik per Kategori
               </h3>
               <p className="text-xs text-slate-500">
-                {chartTimeframe === 'daily'
-                  ? 'Grafik tren bergelombang berdasarkan tanggal pengeluaran & pemasukan'
-                  : 'Grafik tren bergelombang berdasarkan akumulasi per bulan'}
+                {categoryChartMode === 'bar'
+                  ? 'Ringkasan total transaksi berdasarkan kategori (pemasukan & pengeluaran)'
+                  : `Tren perkembangan transaksi per kategori (${chartTimeframe === 'daily' ? 'Per Tanggal' : 'Per Bulan'})`}
               </p>
             </div>
 
-            <div className="flex items-center rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 p-1">
-              <button
-                onClick={() => setChartTimeframe('daily')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
-                  chartTimeframe === 'daily'
-                    ? 'bg-indigo-600 text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Per Tanggal
-              </button>
-              <button
-                onClick={() => setChartTimeframe('monthly')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
-                  chartTimeframe === 'monthly'
-                    ? 'bg-indigo-600 text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Per Bulan
-              </button>
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Tipe Grafik Toggle */}
+              <div className="flex items-center rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 p-1">
+                <button
+                  onClick={() => setCategoryChartMode('bar')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
+                    categoryChartMode === 'bar'
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Batang
+                </button>
+                <button
+                  onClick={() => setCategoryChartMode('line')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
+                    categoryChartMode === 'line'
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Garis
+                </button>
+              </div>
+
+              {/* Filter Tipe Transaksi */}
+              <div className="flex items-center rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 p-1">
+                <button
+                  onClick={() => setCategoryChartType('all')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
+                    categoryChartType === 'all'
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Semua
+                </button>
+                <button
+                  onClick={() => setCategoryChartType('expense')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
+                    categoryChartType === 'expense'
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Pengeluaran
+                </button>
+                <button
+                  onClick={() => setCategoryChartType('income')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
+                    categoryChartType === 'income'
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Pemasukan
+                </button>
+              </div>
             </div>
           </div>
 
           <div className="h-72 w-full">
-            {activeChartData.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-xs text-slate-400">
-                Belum ada riwayat transaksi pada rentang tanggal ini
-              </div>
+            {categoryChartMode === 'bar' ? (
+              categoryChartData.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-xs text-slate-400">
+                  Belum ada transaksi berdasarkan kategori pada periode ini
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={categoryChartData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.25} />
+                    <XAxis dataKey="category" stroke="#e2e8f0" fontSize={11} tickLine={false} />
+                    <YAxis stroke="#e2e8f0" fontSize={11} tickLine={false} width={75} tickFormatter={(val) => { if (val >= 1000000) return `Rp${(val/1000000).toFixed(1)}jt`; if (val >= 1000) return `Rp${(val/1000).toFixed(0)}rb`; return `Rp${val}`; }} />
+                    <Tooltip
+                      formatter={(val: any) => [formatIDR(Number(val)), 'Total']}
+                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
+                    />
+                    <Bar dataKey="amount" radius={[6, 6, 0, 0]} maxBarSize={45}>
+                      {categoryChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.type === 'income' ? '#10b981' : '#f43f5e'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={activeChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
-                    </linearGradient>
-                    <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.25} />
-                  <XAxis dataKey="label" stroke="#94a3b8" fontSize={12} tickLine={false} />
-                  <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} width={75} tickFormatter={(val) => { if (val >= 1000000) return `Rp${(val/1000000).toFixed(1)}jt`; if (val >= 1000) return `Rp${(val/1000).toFixed(0)}rb`; return `Rp${val}`; }} />
-                  <Tooltip
-                    formatter={(val: any) => [formatIDR(Number(val)), '']}
-                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
-                  />
-                  <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', paddingBottom: '10px' }} />
-                  <Area
-                    type="monotone"
-                    dataKey="Pemasukan"
-                    stroke="#10b981"
-                    strokeWidth={3}
-                    fillOpacity={1}
-                    fill="url(#colorIncome)"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="Pengeluaran"
-                    stroke="#f43f5e"
-                    strokeWidth={3}
-                    fillOpacity={1}
-                    fill="url(#colorExpense)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              categoryTrendData.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-xs text-slate-400">
+                  Belum ada riwayat transaksi pada rentang tanggal ini
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={categoryTrendData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.25} />
+                    <XAxis dataKey="label" stroke="#e2e8f0" fontSize={11} tickLine={false} />
+                    <YAxis stroke="#e2e8f0" fontSize={11} tickLine={false} width={75} tickFormatter={(val) => { if (val >= 1000000) return `Rp${(val/1000000).toFixed(1)}jt`; if (val >= 1000) return `Rp${(val/1000).toFixed(0)}rb`; return `Rp${val}`; }} />
+                    <Tooltip
+                      formatter={(val: any, name: any) => [formatIDR(Number(val)), String(name || '')]}
+                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
+                    />
+                    <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '11px', paddingBottom: '10px' }} />
+                    {uniqueCategories.map((cat, index) => {
+                      const strokeColor = PIE_COLORS[index % PIE_COLORS.length];
+                      return (
+                        <Line
+                          key={cat}
+                          type="monotone"
+                          dataKey={cat}
+                          stroke={strokeColor}
+                          strokeWidth={2}
+                          dot={{ r: 3 }}
+                          activeDot={{ r: 5 }}
+                        />
+                      );
+                    })}
+                  </LineChart>
+                </ResponsiveContainer>
+              )
             )}
           </div>
         </Card>
@@ -568,6 +695,92 @@ export default function DashboardPage() {
           </div>
         </Card>
       </div>
+
+      {/* Wave Cash Flow Chart at the Bottom (Full Width) */}
+      <Card className="w-full">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+              Arus Kas Gelombang ({chartTimeframe === 'daily' ? 'Per Tanggal' : 'Per Bulan'})
+            </h3>
+            <p className="text-xs text-slate-500">
+              {chartTimeframe === 'daily'
+                ? 'Grafik tren bergelombang berdasarkan tanggal pengeluaran & pemasukan'
+                : 'Grafik tren bergelombang berdasarkan akumulasi per bulan'}
+            </p>
+          </div>
+
+          <div className="flex items-center rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 p-1">
+            <button
+              onClick={() => setChartTimeframe('daily')}
+              className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
+                chartTimeframe === 'daily'
+                  ? 'bg-indigo-600 text-white shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Per Tanggal
+            </button>
+            <button
+              onClick={() => setChartTimeframe('monthly')}
+              className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
+                chartTimeframe === 'monthly'
+                  ? 'bg-indigo-600 text-white shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Per Bulan
+            </button>
+          </div>
+        </div>
+
+        <div className="h-72 w-full">
+          {activeChartData.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-xs text-slate-400">
+              Belum ada riwayat transaksi pada rentang tanggal ini
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={activeChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                  </linearGradient>
+                  <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.25} />
+                <XAxis dataKey="label" stroke="#e2e8f0" fontSize={12} tickLine={false} />
+                <YAxis stroke="#e2e8f0" fontSize={11} tickLine={false} width={75} tickFormatter={(val) => { if (val >= 1000000) return `Rp${(val/1000000).toFixed(1)}jt`; if (val >= 1000) return `Rp${(val/1000).toFixed(0)}rb`; return `Rp${val}`; }} />
+                <Tooltip
+                  formatter={(val: any) => [formatIDR(Number(val)), '']}
+                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
+                />
+                <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', paddingBottom: '10px' }} />
+                <Area
+                  type="monotone"
+                  dataKey="Pemasukan"
+                  stroke="#10b981"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorIncome)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="Pengeluaran"
+                  stroke="#f43f5e"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorExpense)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }
