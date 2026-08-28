@@ -1,7 +1,7 @@
-﻿'use client';
+'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Wallet, Plus, Trash2, Edit2, AlertTriangle, CheckCircle, PieChart, ShieldAlert } from 'lucide-react';
+import { Wallet, Plus, Trash2, Edit2, AlertTriangle, CheckCircle, PieChart, ShieldAlert, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
@@ -21,6 +21,10 @@ export default function BudgetPage() {
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Period Filter State
+  const [selectedMonth, setSelectedMonth] = useState<number | 'all'>(new Date().getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+
   // Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
@@ -33,13 +37,17 @@ export default function BudgetPage() {
 
   useEffect(() => {
     fetchBudgetData();
-  }, []);
+  }, [selectedMonth, selectedYear]);
 
   const fetchBudgetData = async () => {
     setLoading(true);
     try {
+      const budgetParams = selectedMonth === 'all'
+        ? { all: true }
+        : { month: selectedMonth, year: selectedYear };
+
       const [bRes, cRes, tRes] = await Promise.all([
-        apiClient.get('/budgets'),
+        apiClient.get('/budgets', { params: budgetParams }),
         apiClient.get('/categories'),
         apiClient.get('/transactions'),
       ]);
@@ -70,13 +78,50 @@ export default function BudgetPage() {
     return { ...b, spent_amount: spent, percentage };
   });
 
+  const handlePrevMonth = () => {
+    if (selectedMonth === 'all') {
+      const now = new Date();
+      setSelectedMonth(now.getMonth() + 1);
+      setSelectedYear(now.getFullYear());
+      return;
+    }
+    if (selectedMonth === 1) {
+      setSelectedMonth(12);
+      setSelectedYear((prev) => prev - 1);
+    } else {
+      setSelectedMonth((prev) => (prev as number) - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (selectedMonth === 'all') {
+      const now = new Date();
+      setSelectedMonth(now.getMonth() + 1);
+      setSelectedYear(now.getFullYear());
+      return;
+    }
+    if (selectedMonth === 12) {
+      setSelectedMonth(1);
+      setSelectedYear((prev) => prev + 1);
+    } else {
+      setSelectedMonth((prev) => (prev as number) + 1);
+    }
+  };
+
+  const handleResetToCurrentMonth = () => {
+    const now = new Date();
+    setSelectedMonth(now.getMonth() + 1);
+    setSelectedYear(now.getFullYear());
+  };
+
   const handleOpenCreateModal = () => {
     setEditingBudget(null);
+    const now = new Date();
     setFormData({
       category_id: '',
       amount: '',
-      month: new Date().getMonth() + 1,
-      year: new Date().getFullYear(),
+      month: selectedMonth === 'all' ? now.getMonth() + 1 : selectedMonth,
+      year: selectedMonth === 'all' ? now.getFullYear() : selectedYear,
     });
     setIsModalOpen(true);
   };
@@ -115,8 +160,15 @@ export default function BudgetPage() {
         await apiClient.post('/budgets', payload);
         toast('success', 'Budget baru berhasil ditetapkan');
       }
+      const savedMonth = Number(formData.month);
+      const savedYear = Number(formData.year);
       setIsModalOpen(false);
-      fetchBudgetData();
+      if (selectedMonth !== savedMonth || selectedYear !== savedYear) {
+        setSelectedMonth(savedMonth);
+        setSelectedYear(savedYear);
+      } else {
+        fetchBudgetData();
+      }
     } catch (err: any) {
       toast('error', err.message || 'Gagal menyimpan budget');
     } finally {
@@ -140,16 +192,87 @@ export default function BudgetPage() {
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
             Pengelolaan Budget Bulanan 🎯
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Tetapkan batas pengeluaran & dapatkan notifikasi batas hemat</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Tetapkan batas pengeluaran & navigasi budget bulan lalu, bulan ini, atau bulan depan
+          </p>
         </div>
-        <Button variant="primary" size="sm" onClick={handleOpenCreateModal}>
-          <Plus className="h-4 w-4 mr-1" /> Tetapkan Budget Baru
-        </Button>
+
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {/* Month Navigator Controls */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800/90 rounded-xl p-1 border border-slate-200 dark:border-slate-700/60 shadow-sm">
+            <button
+              type="button"
+              onClick={handlePrevMonth}
+              title="Bulan Sebelumnya"
+              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+
+            <div className="flex items-center gap-1 px-1">
+              <Select
+                value={selectedMonth.toString()}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedMonth(val === 'all' ? 'all' : Number(val));
+                }}
+                options={[
+                  { value: 'all', label: 'Semua Bulan' },
+                  ...Array.from({ length: 12 }, (_, i) => ({
+                    value: (i + 1).toString(),
+                    label: getMonthName(i + 1),
+                  })),
+                ]}
+                className="w-32 text-xs border-none bg-transparent shadow-none focus:ring-0 py-1"
+              />
+
+              {selectedMonth !== 'all' && (
+                <Select
+                  value={selectedYear.toString()}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  options={[
+                    { value: '2024', label: '2024' },
+                    { value: '2025', label: '2025' },
+                    { value: '2026', label: '2026' },
+                    { value: '2027', label: '2027' },
+                    { value: '2028', label: '2028' },
+                  ]}
+                  className="w-24 text-xs border-none bg-transparent shadow-none focus:ring-0 py-1"
+                />
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleNextMonth}
+              title="Bulan Selanjutnya"
+              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          {(selectedMonth !== new Date().getMonth() + 1 || selectedYear !== new Date().getFullYear()) && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleResetToCurrentMonth}
+              className="text-xs text-indigo-500 hover:text-indigo-400 border border-indigo-500/20"
+            >
+              <Calendar className="h-3.5 w-3.5 mr-1" /> Bulan Ini
+            </Button>
+          )}
+
+          <Button variant="primary" size="sm" onClick={handleOpenCreateModal}>
+            <Plus className="h-4 w-4 mr-1" /> Tetapkan Budget Baru
+          </Button>
+        </div>
       </div>
 
       {/* Budget Summary Cards Grid */}
