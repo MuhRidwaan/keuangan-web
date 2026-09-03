@@ -1,15 +1,22 @@
+'use client';
+
 import React, { useEffect, useState } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, Calendar, PieChart, ArrowUpRight, ArrowDownRight, Layers, Filter, RotateCcw, Sparkles } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Calendar, PieChart, ArrowUpRight, ArrowDownRight, Layers, Filter, RotateCcw, Sparkles, FileSpreadsheet, FileText } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { Card } from '@/components/ui/Card';
 import { Input, Select } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { formatIDR, getMonthName, getCutOffPeriod } from '@/lib/utils';
+import { useToast } from '@/components/providers/ToastProvider';
+import { formatIDR, formatDate, getMonthName, getCutOffPeriod } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { Transaction } from '@/lib/types';
 import { PageSkeleton } from '@/components/ui/Skeleton';
 
 export default function ReportsPage() {
+  const { toast } = useToast();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -83,16 +90,91 @@ export default function ReportsPage() {
 
   const categoryBreakdown = Object.values(catSummaryMap).sort((a, b) => b.total - a.total);
 
+  // Export Excel Report (.xlsx)
+  const handleExportExcel = () => {
+    const summarySheetData = categoryBreakdown.map((c) => ({
+      Kategori: c.name,
+      Tipe: c.type === 'income' ? 'Pemasukan' : 'Pengeluaran',
+      Total_Nominal: c.total,
+    }));
+
+    const txSheetData = filteredTxs.map((t, idx) => ({
+      No: idx + 1,
+      Tanggal: formatDate(t.date),
+      Kategori: t.category?.name || 'Umum',
+      Tipe: t.category?.type === 'income' ? 'Pemasukan' : 'Pengeluaran',
+      Catatan: t.notes || '-',
+      Nominal_Rp: Number(t.amount),
+    }));
+
+    const workbook = XLSX.utils.book_new();
+
+    const wsSummary = XLSX.utils.json_to_sheet(summarySheetData);
+    XLSX.utils.book_append_sheet(workbook, wsSummary, 'Ringkasan Kategori');
+
+    const wsTx = XLSX.utils.json_to_sheet(txSheetData);
+    XLSX.utils.book_append_sheet(workbook, wsTx, 'Daftar Transaksi');
+
+    XLSX.writeFile(workbook, `Laporan_Keuangan_${startDate}_sd_${endDate}.xlsx`);
+    toast('success', 'File Excel Laporan Keuangan berhasil diunduh');
+  };
+
+  // Export PDF Report (.pdf)
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+
+    doc.setFontSize(18);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Laporan Keuangan & Cashflow Insights', 14, 20);
+
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Periode: ${startDate || 'Awal'} s/d ${endDate || 'Hari Ini'} (${cutoffInfo.label})`, 14, 28);
+    doc.text(`Total Pemasukan: ${formatIDR(totalIncome)} | Total Pengeluaran: ${formatIDR(totalExpense)} | Net: ${formatIDR(netCashFlow)}`, 14, 34);
+
+    const rows = filteredTxs.map((t, index) => [
+      index + 1,
+      formatDate(t.date),
+      t.category?.name || 'Umum',
+      t.category?.type === 'income' ? 'Pemasukan (+)' : 'Pengeluaran (-)',
+      t.notes || '-',
+      formatIDR(Number(t.amount)),
+    ]);
+
+    autoTable(doc, {
+      startY: 42,
+      head: [['No', 'Tanggal', 'Kategori', 'Tipe', 'Catatan', 'Nominal (Rp)']],
+      body: rows.length > 0 ? rows : [['-', '-', 'Tidak ada data', '-', '-', '-']],
+      theme: 'grid',
+      headStyles: { fillColor: [99, 102, 241], textColor: [255, 255, 255] },
+      styles: { fontSize: 8 },
+    });
+
+    doc.save(`Laporan_Keuangan_${startDate}_sd_${endDate}.pdf`);
+    toast('success', 'Dokumen PDF Laporan Keuangan berhasil diunduh');
+  };
+
   if (loading) return <PageSkeleton title="Memuat Laporan Keuangan..." />;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
-      {/* Header Title */}
-      <div>
-        <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
-          Laporan Keuangan & Insights 📈
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">Analisis mendalam arus kas, rata-rata pengeluaran, dan net income</p>
+      {/* Header Title & Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
+            Laporan Keuangan & Insights 📈
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">Analisis mendalam arus kas, rata-rata pengeluaran, dan net income</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleExportExcel}>
+            <FileSpreadsheet className="h-4 w-4 mr-1 text-emerald-500" /> Ekspor Excel (.xlsx)
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleExportPDF}>
+            <FileText className="h-4 w-4 mr-1 text-indigo-500" /> Ekspor PDF (.pdf)
+          </Button>
+        </div>
       </div>
 
       {/* Date Range Filter Control Bar */}

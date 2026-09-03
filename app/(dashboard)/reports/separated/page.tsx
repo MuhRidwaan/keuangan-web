@@ -15,17 +15,26 @@ import {
   Filter,
   RotateCcw,
   Sparkles,
+  FileSpreadsheet,
+  FileText,
+  Search,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
 import { Card } from '@/components/ui/Card';
 import { Input, Select } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { useToast } from '@/components/providers/ToastProvider';
 import { formatIDR, formatDate, getMonthName, getCutOffPeriod } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { Transaction } from '@/lib/types';
 import { PageSkeleton } from '@/components/ui/Skeleton';
 
 export default function SeparatedReportPage() {
+  const { toast } = useToast();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -37,6 +46,10 @@ export default function SeparatedReportPage() {
     isCutOffSet: false,
     cutoffDay: 1,
   });
+
+  // List View Filter State
+  const [search, setSearch] = useState('');
+  const [listTab, setListTab] = useState<'all' | 'income' | 'expense'>('all');
 
   useEffect(() => {
     const period = getCutOffPeriod();
@@ -63,6 +76,7 @@ export default function SeparatedReportPage() {
     const period = getCutOffPeriod();
     setStartDate(period.startDate);
     setEndDate(period.endDate);
+    setSearch('');
   };
 
   // Filter transactions by selected cut-off period date range
@@ -112,18 +126,147 @@ export default function SeparatedReportPage() {
   const topIncomes = [...incomeTxs].sort((a, b) => Number(b.amount) - Number(a.amount)).slice(0, 5);
   const topExpenses = [...expenseTxs].sort((a, b) => Number(b.amount) - Number(a.amount)).slice(0, 5);
 
+  // List View Filtered Data
+  const listTxs = filteredTxs.filter((t) => {
+    if (listTab === 'income' && t.category?.type !== 'income') return false;
+    if (listTab === 'expense' && t.category?.type !== 'expense') return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      (t.notes && t.notes.toLowerCase().includes(q)) ||
+      (t.category?.name && t.category.name.toLowerCase().includes(q)) ||
+      String(t.amount).includes(q)
+    );
+  });
+
+  // Export Excel Report (.xlsx)
+  const handleExportExcel = () => {
+    const summaryData = [
+      { Parameter: 'Periode Laporan', Nilai: `${startDate || 'Awal'} s/d ${endDate || 'Hari Ini'}` },
+      { Parameter: 'Total Pemasukan', Nilai: totalIncome },
+      { Parameter: 'Total Pengeluaran', Nilai: totalExpense },
+      { Parameter: 'Net Cashflow (Surplus/Defisit)', Nilai: netFlow },
+      { Parameter: 'Rasio Pengeluaran', Nilai: `${expenseRatio.toFixed(1)}%` },
+      { Parameter: 'Jumlah Transaksi Pemasukan', Nilai: incomeTxs.length },
+      { Parameter: 'Jumlah Transaksi Pengeluaran', Nilai: expenseTxs.length },
+    ];
+
+    const incomeSheetData = incomeTxs.map((t, idx) => ({
+      No: idx + 1,
+      Tanggal: formatDate(t.date),
+      Kategori: t.category?.name || 'Pemasukan',
+      Catatan: t.notes || '-',
+      Nominal_Rp: Number(t.amount || 0),
+    }));
+
+    const expenseSheetData = expenseTxs.map((t, idx) => ({
+      No: idx + 1,
+      Tanggal: formatDate(t.date),
+      Kategori: t.category?.name || 'Pengeluaran',
+      Catatan: t.notes || '-',
+      Nominal_Rp: Number(t.amount || 0),
+    }));
+
+    const workbook = XLSX.utils.book_new();
+
+    const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+    XLSX.utils.book_append_sheet(workbook, wsSummary, 'Ringkasan Laporan');
+
+    const wsIncome = XLSX.utils.json_to_sheet(incomeSheetData);
+    XLSX.utils.book_append_sheet(workbook, wsIncome, 'Detail Pemasukan');
+
+    const wsExpense = XLSX.utils.json_to_sheet(expenseSheetData);
+    XLSX.utils.book_append_sheet(workbook, wsExpense, 'Detail Pengeluaran');
+
+    XLSX.writeFile(workbook, `Laporan_Pemasukan_Pengeluaran_${startDate}_sd_${endDate}.xlsx`);
+    toast('success', 'File Excel Laporan Terpisah berhasil diunduh');
+  };
+
+  // Export PDF Report (.pdf)
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+
+    doc.setFontSize(18);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Laporan Pemasukan & Pengeluaran Terpisah', 14, 20);
+
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Periode: ${startDate || 'Awal'} s/d ${endDate || 'Hari Ini'} (${cutoffInfo.label})`, 14, 28);
+    doc.text(`Total Pemasukan: ${formatIDR(totalIncome)} | Total Pengeluaran: ${formatIDR(totalExpense)} | Net: ${formatIDR(netFlow)}`, 14, 34);
+
+    // Table 1: Pemasukan
+    doc.setFontSize(12);
+    doc.setTextColor(16, 185, 129);
+    doc.text('1. Daftar Rincian Pemasukan 🟢', 14, 46);
+
+    const incomeRows = incomeTxs.map((t, index) => [
+      index + 1,
+      formatDate(t.date),
+      t.category?.name || 'Pemasukan',
+      t.notes || '-',
+      formatIDR(Number(t.amount)),
+    ]);
+
+    autoTable(doc, {
+      startY: 50,
+      head: [['No', 'Tanggal', 'Kategori', 'Catatan', 'Nominal (Rp)']],
+      body: incomeRows.length > 0 ? incomeRows : [['-', '-', 'Tidak ada transaksi pemasukan', '-', '-']],
+      theme: 'grid',
+      headStyles: { fillColor: [16, 185, 129], textColor: [255, 255, 255] },
+      styles: { fontSize: 8 },
+    });
+
+    // Table 2: Pengeluaran
+    const finalY = (doc as any).lastAutoTable.finalY || 120;
+    doc.setFontSize(12);
+    doc.setTextColor(244, 63, 94);
+    doc.text('2. Daftar Rincian Pengeluaran 🔴', 14, finalY + 14);
+
+    const expenseRows = expenseTxs.map((t, index) => [
+      index + 1,
+      formatDate(t.date),
+      t.category?.name || 'Pengeluaran',
+      t.notes || '-',
+      formatIDR(Number(t.amount)),
+    ]);
+
+    autoTable(doc, {
+      startY: finalY + 18,
+      head: [['No', 'Tanggal', 'Kategori', 'Catatan', 'Nominal (Rp)']],
+      body: expenseRows.length > 0 ? expenseRows : [['-', '-', 'Tidak ada transaksi pengeluaran', '-', '-']],
+      theme: 'striped',
+      headStyles: { fillColor: [244, 63, 94], textColor: [255, 255, 255] },
+      styles: { fontSize: 8 },
+    });
+
+    doc.save(`Laporan_Pemasukan_Pengeluaran_${startDate}_sd_${endDate}.pdf`);
+    toast('success', 'Dokumen PDF Laporan Terpisah berhasil diunduh');
+  };
+
   if (loading) return <PageSkeleton title="Memuat Laporan Terpisah..." />;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
-      {/* Header Title */}
-      <div>
-        <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
-          Laporan Pemasukan & Pengeluaran Terpisah ⚖️
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Analisis terpisah tanpa mencampurkan arus pemasukan dan pengeluaran Anda
-        </p>
+      {/* Header Title & Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
+            Laporan Pemasukan & Pengeluaran Terpisah ⚖️
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Analisis terpisah tanpa mencampurkan arus pemasukan dan pengeluaran Anda
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleExportExcel}>
+            <FileSpreadsheet className="h-4 w-4 mr-1 text-emerald-500" /> Ekspor Excel (.xlsx)
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleExportPDF}>
+            <FileText className="h-4 w-4 mr-1 text-indigo-500" /> Ekspor PDF (.pdf)
+          </Button>
+        </div>
       </div>
 
       {/* Date Range Filter Control Bar */}
@@ -379,6 +522,119 @@ export default function SeparatedReportPage() {
         </div>
 
       </div>
+
+      {/* ==================== LIST VIEW TABLE SECTION ==================== */}
+      <Card className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div>
+            <h2 className="text-lg font-black text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-indigo-500" />
+              Tabel Rincian Itemized Laporan (Bentuk List) 📄
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Daftar seluruh catatan item transaksi Pemasukan dan Pengeluaran periode ini
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Filter Search */}
+            <div className="w-full sm:w-64">
+              <Input
+                placeholder="Cari transaksi / catatan..."
+                icon={<Search className="h-4 w-4" />}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="py-1.5 text-xs"
+              />
+            </div>
+
+            {/* List Type Tabs */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setListTab('all')}
+                className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
+                  listTab === 'all'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Semua ({filteredTxs.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setListTab('income')}
+                className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
+                  listTab === 'income'
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Pemasukan ({incomeTxs.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setListTab('expense')}
+                className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
+                  listTab === 'expense'
+                    ? 'bg-rose-600 text-white shadow'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Pengeluaran ({expenseTxs.length})
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Itemized Transactions Table */}
+        <div className="overflow-x-auto">
+          {listTxs.length === 0 ? (
+            <div className="text-center py-10 text-slate-400 space-y-2">
+              <Receipt className="h-10 w-10 text-slate-500 mx-auto" />
+              <p className="text-xs">Tidak ada transaksi yang cocok dengan kriteria filter.</p>
+            </div>
+          ) : (
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-500 uppercase tracking-wider font-bold text-[10px]">
+                <tr>
+                  <th className="py-3 px-4 rounded-l-lg">No</th>
+                  <th className="py-3 px-4">Tanggal</th>
+                  <th className="py-3 px-4">Kategori</th>
+                  <th className="py-3 px-4">Tipe Kas</th>
+                  <th className="py-3 px-4">Catatan / Deskripsi</th>
+                  <th className="py-3 px-4 text-right rounded-r-lg">Nominal (Rp)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-medium">
+                {listTxs.map((t, idx) => {
+                  const isIncome = t.category?.type === 'income';
+                  return (
+                    <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition">
+                      <td className="py-3 px-4 text-slate-400">{idx + 1}</td>
+                      <td className="py-3 px-4 text-slate-900 dark:text-slate-100 font-semibold">{formatDate(t.date)}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant={isIncome ? 'success' : 'danger'}>
+                          {t.category?.name || 'Umum'}
+                        </Badge>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={isIncome ? 'text-emerald-500 font-bold' : 'text-rose-500 font-bold'}>
+                          {isIncome ? '🟢 Pemasukan (+)' : '🔴 Pengeluaran (-)'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-slate-600 dark:text-slate-300">{t.notes || '-'}</td>
+                      <td className={`py-3 px-4 text-right font-black text-sm ${isIncome ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        {isIncome ? '+' : '-'}{formatIDR(Number(t.amount))}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }
