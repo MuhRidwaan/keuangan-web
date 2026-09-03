@@ -16,7 +16,7 @@ import {
 import { Card } from '@/components/ui/Card';
 import { Select } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
-import { formatIDR, formatDate, getMonthName, getCutOffPeriod } from '@/lib/utils';
+import { formatIDR, formatDate, getMonthName, getCutOffPeriod, getCutOffDay } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { Transaction } from '@/lib/types';
 import { PageSkeleton } from '@/components/ui/Skeleton';
@@ -26,11 +26,10 @@ export default function SeparatedReportPage() {
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<number | 'all'>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-  const [activePeriodLabel, setActivePeriodLabel] = useState<string>('');
+  const [cutoffDay, setCutoffDay] = useState<number>(1);
 
   useEffect(() => {
-    const period = getCutOffPeriod();
-    setActivePeriodLabel(period.label);
+    setCutoffDay(getCutOffDay());
     fetchTransactions();
   }, []);
 
@@ -47,13 +46,46 @@ export default function SeparatedReportPage() {
     }
   };
 
-  // Filter transactions by selected period
+  // Determine cut-off date range & label
+  let startDate = '';
+  let endDate = '';
+  let activePeriodLabel = '';
+
+  if (selectedMonth === 'all') {
+    if (cutoffDay > 1) {
+      const refEnd = new Date(Number(selectedYear), 11, cutoffDay - 1);
+      startDate = `${selectedYear}-01-${String(cutoffDay).padStart(2, '0')}`;
+      endDate = getCutOffPeriod(cutoffDay, refEnd).endDate;
+      activePeriodLabel = `Tahun ${selectedYear} (Cut-Off Tgl ${cutoffDay})`;
+    } else {
+      startDate = `${selectedYear}-01-01`;
+      endDate = `${selectedYear}-12-31`;
+      activePeriodLabel = `Semua Bulan ${selectedYear}`;
+    }
+  } else {
+    if (cutoffDay > 1) {
+      const refDate = new Date(Number(selectedYear), Number(selectedMonth) - 1, cutoffDay - 1);
+      const period = getCutOffPeriod(cutoffDay, refDate);
+      startDate = period.startDate;
+      endDate = period.endDate;
+      activePeriodLabel = `${period.label} (Cut-Off Tgl ${cutoffDay})`;
+    } else {
+      const m = Number(selectedMonth);
+      const y = Number(selectedYear);
+      const lastDay = new Date(y, m, 0).getDate();
+      startDate = `${y}-${String(m).padStart(2, '0')}-01`;
+      endDate = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      activePeriodLabel = `${getMonthName(m)} ${y}`;
+    }
+  }
+
+  // Filter transactions by selected cut-off period date range
   const filteredTxs = transactions.filter((t) => {
     if (!t.date) return false;
-    const d = new Date(t.date);
-    const matchesYear = d.getFullYear() === Number(selectedYear);
-    const matchesMonth = selectedMonth === 'all' || d.getMonth() + 1 === Number(selectedMonth);
-    return matchesYear && matchesMonth;
+    const txDateStr = t.date.split('T')[0];
+    if (startDate && txDateStr < startDate) return false;
+    if (endDate && txDateStr > endDate) return false;
+    return true;
   });
 
   // Separate Income and Expense Transactions
@@ -104,8 +136,11 @@ export default function SeparatedReportPage() {
           <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
             Laporan Pemasukan & Pengeluaran Terpisah ⚖️
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Analisis terpisah tanpa mencampurkan arus pemasukan dan pengeluaran Anda
+          <p className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-2">
+            <span>Analisis terpisah tanpa mencampurkan arus pemasukan & pengeluaran</span>
+            <span className="text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-md text-[11px]">
+              📅 {activePeriodLabel}
+            </span>
           </p>
         </div>
 

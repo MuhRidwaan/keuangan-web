@@ -1,11 +1,11 @@
-﻿'use client';
+'use client';
 
 import React, { useEffect, useState } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, Calendar, PieChart, ArrowUpRight, ArrowDownRight, Layers } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Select } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
-import { formatIDR, getMonthName } from '@/lib/utils';
+import { formatIDR, getMonthName, getCutOffPeriod, getCutOffDay } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { Transaction } from '@/lib/types';
 import { PageSkeleton } from '@/components/ui/Skeleton';
@@ -15,8 +15,10 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [cutoffDay, setCutoffDay] = useState<number>(1);
 
   useEffect(() => {
+    setCutoffDay(getCutOffDay());
     fetchTransactions();
   }, []);
 
@@ -32,10 +34,30 @@ export default function ReportsPage() {
     }
   };
 
-  // Filter transactions by selected month & year
+  // Determine cut-off date range
+  let startDate = '';
+  let endDate = '';
+
+  if (cutoffDay > 1) {
+    const refDate = new Date(Number(selectedYear), Number(selectedMonth) - 1, cutoffDay - 1);
+    const period = getCutOffPeriod(cutoffDay, refDate);
+    startDate = period.startDate;
+    endDate = period.endDate;
+  } else {
+    const m = Number(selectedMonth);
+    const y = Number(selectedYear);
+    const lastDay = new Date(y, m, 0).getDate();
+    startDate = `${y}-${String(m).padStart(2, '0')}-01`;
+    endDate = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  }
+
+  // Filter transactions by cut-off period date range
   const filteredTxs = transactions.filter((t) => {
-    const d = new Date(t.date);
-    return d.getMonth() + 1 === Number(selectedMonth) && d.getFullYear() === Number(selectedYear);
+    if (!t.date) return false;
+    const txDateStr = t.date.split('T')[0];
+    if (startDate && txDateStr < startDate) return false;
+    if (endDate && txDateStr > endDate) return false;
+    return true;
   });
 
   const totalIncome = filteredTxs
