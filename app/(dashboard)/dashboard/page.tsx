@@ -265,10 +265,51 @@ export default function DashboardPage() {
 
   const activeChartData = chartTimeframe === 'daily' ? dailyChartData : monthlyChartData;
 
-  // Budget Smart Alert
-  const totalBudgetLimit = budgets.reduce((sum, b) => sum + Number(b.amount), 0);
-  const isBudgetNearLimit = totalBudgetLimit > 0 && totalExpense / totalBudgetLimit >= 0.8;
-  const isBudgetExceeded = totalBudgetLimit > 0 && totalExpense >= totalBudgetLimit;
+  // Budget Smart Alert: Evaluasi budget secara spesifik per-kategori atau global
+  const safeBudgets = Array.isArray(budgets) ? budgets : [];
+  const activeExpenseTxs = filteredTransactions.filter((t) => t.category?.type === 'expense');
+
+  const budgetAlerts = safeBudgets
+    .map((b) => {
+      const limit = Number(b.amount || 0);
+      if (limit <= 0) return null;
+
+      const categoryName = b.category?.name || 'Global (Semua Pengeluaran)';
+
+      // Hitung pengeluaran untuk budget ini saja (jika category_id ada) atau total pengeluaran (jika global)
+      const spent = activeExpenseTxs
+        .filter((t) => (!b.category_id || t.category_id === b.category_id))
+        .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+      const percentage = (spent / limit) * 100;
+      const isExceeded = spent >= limit;
+      const isNearLimit = percentage >= 80 && !isExceeded;
+
+      if (!isExceeded && !isNearLimit) return null;
+
+      return {
+        id: b.id,
+        categoryName,
+        spent,
+        limit,
+        percentage,
+        isExceeded,
+        isNearLimit,
+      };
+    })
+    .filter(Boolean) as Array<{
+      id: string;
+      categoryName: string;
+      spent: number;
+      limit: number;
+      percentage: number;
+      isExceeded: boolean;
+      isNearLimit: boolean;
+    }>;
+
+  const exceededAlerts = budgetAlerts.filter((a) => a.isExceeded);
+  const nearLimitAlerts = budgetAlerts.filter((a) => a.isNearLimit);
+  const hasBudgetAlerts = budgetAlerts.length > 0;
 
   const handleResetFilter = () => {
     const period = getCutOffPeriod();
@@ -284,7 +325,7 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
-            Dashboard Analytics ??
+            Dashboard Analytics 📊
           </h1>
           <p className="text-xs text-slate-500 mt-1">Pantau seluruh arus kas keuangan & agenda terdekat Anda</p>
         </div>
@@ -298,21 +339,28 @@ export default function DashboardPage() {
       </div>
 
       {/* Smart Alert Banner if Budget Warning */}
-      {totalBudgetLimit > 0 && (isBudgetNearLimit || isBudgetExceeded) && (
+      {hasBudgetAlerts && (
         <div
-          className={`p-4 rounded-2xl border backdrop-blur-md flex items-center justify-between ${
-            isBudgetExceeded
+          className={`p-4 rounded-2xl border backdrop-blur-md flex flex-col md:flex-row items-start md:items-center justify-between gap-3 ${
+            exceededAlerts.length > 0
               ? 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
               : 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
           }`}
         >
           <div className="flex items-center gap-3">
             <Sparkles className="h-5 w-5 shrink-0" />
-            <p className="text-xs font-medium">
-              {isBudgetExceeded
-                ? `Peringatan: Total pengeluaran Anda (${formatIDR(totalExpense)}) telah MELEBIHI batas budget bulanan (${formatIDR(totalBudgetLimit)})!`
-                : `Perhatian: Total pengeluaran Anda (${formatIDR(totalExpense)}) hampir mencapai batas budget bulanan (${formatIDR(totalBudgetLimit)}).`}
-            </p>
+            <div className="text-xs font-medium space-y-1">
+              {exceededAlerts.map((a) => (
+                <p key={a.id}>
+                  Peringatan: Budget <strong>{a.categoryName}</strong> ({formatIDR(a.spent)}) telah <strong>MELEBIHI</strong> batas ({formatIDR(a.limit)})!
+                </p>
+              ))}
+              {nearLimitAlerts.map((a) => (
+                <p key={a.id}>
+                  Perhatian: Budget <strong>{a.categoryName}</strong> ({formatIDR(a.spent)}) hampir mencapai batas ({formatIDR(a.limit)}) ({a.percentage.toFixed(0)}%).
+                </p>
+              ))}
+            </div>
           </div>
           <Link href="/budget">
             <Button variant="outline" size="sm" className="shrink-0 text-xs">

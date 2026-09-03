@@ -8,7 +8,7 @@ import { Input, Select } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { useToast } from '@/components/providers/ToastProvider';
-import { formatIDR, getMonthName } from '@/lib/utils';
+import { formatIDR, getMonthName, getCutOffDay, setCutOffDay, getCutOffPeriod } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { Budget, Category, Transaction } from '@/lib/types';
 import { PageSkeleton } from '@/components/ui/Skeleton';
@@ -20,6 +20,11 @@ export default function BudgetPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Cut-Off Day State
+  const [cutoffDay, setCutoffDayState] = useState<number>(1);
+  const [isCutoffModalOpen, setIsCutoffModalOpen] = useState(false);
+  const [newCutoffDayInput, setNewCutoffDayInput] = useState<string>('1');
 
   // Period Filter State
   const [selectedMonth, setSelectedMonth] = useState<number | 'all'>(new Date().getMonth() + 1);
@@ -34,6 +39,12 @@ export default function BudgetPage() {
     month: new Date().getMonth() + 1,
     year: new Date().getFullYear(),
   });
+
+  useEffect(() => {
+    const day = getCutOffDay();
+    setCutoffDayState(day);
+    setNewCutoffDayInput(day.toString());
+  }, []);
 
   useEffect(() => {
     fetchBudgetData();
@@ -51,9 +62,14 @@ export default function BudgetPage() {
         apiClient.get('/categories'),
         apiClient.get('/transactions'),
       ]);
-      const rawBudgets = bRes.data?.data; setBudgets(Array.isArray(rawBudgets) ? rawBudgets : (rawBudgets?.items || []));
-      const rawCats = cRes.data?.data; setCategories(Array.isArray(rawCats) ? rawCats : (rawCats?.items || []));
-      setTransactions(tRes.data?.data || []);
+      const rawBudgets = bRes.data?.data;
+      setBudgets(Array.isArray(rawBudgets) ? rawBudgets : (rawBudgets?.items || []));
+
+      const rawCats = cRes.data?.data;
+      setCategories(Array.isArray(rawCats) ? rawCats : (rawCats?.items || []));
+
+      const rawTx = tRes.data?.data;
+      setTransactions(Array.isArray(rawTx) ? rawTx : (rawTx?.items || []));
     } catch (err: any) {
       toast('error', 'Gagal memuat data budget');
     } finally {
@@ -61,21 +77,46 @@ export default function BudgetPage() {
     }
   };
 
-  // Calculate spent amount for each budget based on category & date
-  const enrichedBudgets = budgets.map((b) => {
-    const spent = transactions
+  // Calculate spent amount for each budget based on category & date / cut-off period
+  const safeBudgets = Array.isArray(budgets) ? budgets : [];
+  const safeTransactions = Array.isArray(transactions) ? transactions : [];
+
+  const enrichedBudgets = safeBudgets.map((b) => {
+    let periodLabel = `${getMonthName(b.month)} ${b.year}`;
+    let startDateStr = '';
+    let endDateStr = '';
+
+    if (cutoffDay > 1) {
+      const refDate = new Date(b.year, b.month - 1, cutoffDay - 1);
+      const period = getCutOffPeriod(cutoffDay, refDate);
+      startDateStr = period.startDate;
+      endDateStr = period.endDate;
+      periodLabel = `${period.label} (Cut-off tgl ${cutoffDay})`;
+    }
+
+    const spent = safeTransactions
       .filter((t) => {
-        const txDate = new Date(t.date);
-        const matchesMonth = txDate.getMonth() + 1 === b.month;
-        const matchesYear = txDate.getFullYear() === b.year;
+        if (!t.date) return false;
+        const txDateStr = t.date.split('T')[0];
+
+        let matchesPeriod = false;
+        if (cutoffDay > 1 && startDateStr && endDateStr) {
+          matchesPeriod = txDateStr >= startDateStr && txDateStr <= endDateStr;
+        } else {
+          const txDate = new Date(t.date);
+          const matchesMonth = txDate.getMonth() + 1 === b.month;
+          const matchesYear = txDate.getFullYear() === b.year;
+          matchesPeriod = matchesMonth && matchesYear;
+        }
+
         const matchesCategory = !b.category_id || t.category_id === b.category_id;
-        return matchesMonth && matchesYear && matchesCategory && t.category?.type === 'expense';
+        return matchesPeriod && matchesCategory && t.category?.type === 'expense';
       })
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const limit = Number(b.amount);
     const percentage = limit > 0 ? (spent / limit) * 100 : 0;
-    return { ...b, spent_amount: spent, percentage };
+    return { ...b, spent_amount: spent, percentage, periodLabel };
   });
 
   const handlePrevMonth = () => {
@@ -203,6 +244,22 @@ export default function BudgetPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {/* Cut-off Indicator & Quick Setting */}
+          <div className="flex items-center gap-2 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800/50 text-xs font-medium">
+            <Calendar className="h-4 w-4 text-indigo-500" />
+            <span>Siklus Cut-Off: <strong>{cutoffDay > 1 ? `Tanggal ${cutoffDay}` : 'Bulan Kalender (Tgl 1)'}</strong></span>
+            <button
+              type="button"
+              onClick={() => {
+                setNewCutoffDayInput(cutoffDay.toString());
+                setIsCutoffModalOpen(true);
+              }}
+              className="ml-1 text-[11px] underline hover:text-indigo-900 dark:hover:text-indigo-100 font-semibold"
+            >
+              Atur Siklus
+            </button>
+          </div>
+
           {/* Month Navigator Controls */}
           <div className="flex items-center bg-slate-100 dark:bg-slate-800/90 rounded-xl p-1 border border-slate-200 dark:border-slate-700/60 shadow-sm">
             <button
@@ -318,7 +375,7 @@ export default function BudgetPage() {
                       {b.category?.name || 'Global (Semua Kategori)'}
                     </h3>
                     <p className="text-[11px] text-slate-400">
-                      Periode: {getMonthName(b.month)} {b.year}
+                      Periode: {b.periodLabel}
                     </p>
                   </div>
                   <Badge variant={badgeVariant}>{statusText}</Badge>
@@ -422,6 +479,55 @@ export default function BudgetPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Cut-Off Day Modal */}
+      <Modal
+        isOpen={isCutoffModalOpen}
+        onClose={() => setIsCutoffModalOpen(false)}
+        title="Atur Siklus Gajian (Cut-Off)"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-500">
+            Tentukan tanggal awal gajian Anda (misal tanggal 25). Perhitungan batas budget dan pengeluaran akan otomatis disesuaikan berdasarkan rentang siklus gajian tersebut (contoh: 25 Agu - 24 Sep).
+          </p>
+
+          <Input
+            label="Tanggal Gajian / Cut-Off (1 - 28)"
+            type="number"
+            min="1"
+            max="28"
+            value={newCutoffDayInput}
+            onChange={(e) => setNewCutoffDayInput(e.target.value)}
+          />
+
+          <p className="text-[11px] text-slate-400">
+            Pilih tanggal 1 jika ingin kembali menggunakan siklus Bulan Kalender standar (tgl 1 - akhir bulan).
+          </p>
+
+          <div className="flex justify-end gap-2 pt-4 border-t border-slate-200 dark:border-slate-800">
+            <Button type="button" variant="ghost" onClick={() => setIsCutoffModalOpen(false)}>
+              Batal
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => {
+                const day = parseInt(newCutoffDayInput, 10);
+                if (isNaN(day) || day < 1 || day > 28) {
+                  toast('error', 'Masukkan tanggal cut-off valid antara 1 - 28');
+                  return;
+                }
+                setCutOffDay(day);
+                setCutoffDayState(day);
+                setIsCutoffModalOpen(false);
+                toast('success', day > 1 ? `Siklus gaji / cut-off berhasil diatur ke tanggal ${day}` : 'Siklus diatur kembali ke Bulan Kalender');
+              }}
+            >
+              Simpan Siklus
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
