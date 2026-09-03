@@ -1,11 +1,10 @@
-'use client';
-
 import React, { useEffect, useState } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, Calendar, PieChart, ArrowUpRight, ArrowDownRight, Layers } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Calendar, PieChart, ArrowUpRight, ArrowDownRight, Layers, Filter, RotateCcw, Sparkles } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
-import { Select } from '@/components/ui/Input';
+import { Input, Select } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { formatIDR, getMonthName, getCutOffPeriod, getCutOffDay } from '@/lib/utils';
+import { formatIDR, getMonthName, getCutOffPeriod } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { Transaction } from '@/lib/types';
 import { PageSkeleton } from '@/components/ui/Skeleton';
@@ -13,12 +12,21 @@ import { PageSkeleton } from '@/components/ui/Skeleton';
 export default function ReportsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-  const [cutoffDay, setCutoffDay] = useState<number>(1);
+
+  // Date Range Filter State
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [cutoffInfo, setCutoffInfo] = useState<{ label: string; isCutOffSet: boolean; cutoffDay: number }>({
+    label: '',
+    isCutOffSet: false,
+    cutoffDay: 1,
+  });
 
   useEffect(() => {
-    setCutoffDay(getCutOffDay());
+    const period = getCutOffPeriod();
+    setStartDate(period.startDate);
+    setEndDate(period.endDate);
+    setCutoffInfo({ label: period.label, isCutOffSet: period.isCutOffSet, cutoffDay: period.cutoffDay });
     fetchTransactions();
   }, []);
 
@@ -34,24 +42,13 @@ export default function ReportsPage() {
     }
   };
 
-  // Determine cut-off date range
-  let startDate = '';
-  let endDate = '';
+  const handleResetFilter = () => {
+    const period = getCutOffPeriod();
+    setStartDate(period.startDate);
+    setEndDate(period.endDate);
+  };
 
-  if (cutoffDay > 1) {
-    const refDate = new Date(Number(selectedYear), Number(selectedMonth) - 1, cutoffDay - 1);
-    const period = getCutOffPeriod(cutoffDay, refDate);
-    startDate = period.startDate;
-    endDate = period.endDate;
-  } else {
-    const m = Number(selectedMonth);
-    const y = Number(selectedYear);
-    const lastDay = new Date(y, m, 0).getDate();
-    startDate = `${y}-${String(m).padStart(2, '0')}-01`;
-    endDate = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-  }
-
-  // Filter transactions by cut-off period date range
+  // Filter transactions by date range
   const filteredTxs = transactions.filter((t) => {
     if (!t.date) return false;
     const txDateStr = t.date.split('T')[0];
@@ -69,8 +66,10 @@ export default function ReportsPage() {
     .reduce((sum, t) => sum + Number(t.amount), 0);
 
   const netCashFlow = totalIncome - totalExpense;
-  const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
-  const dailyAverageExpense = totalExpense / (daysInMonth || 30);
+  const daysDiff = startDate && endDate
+    ? Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1)
+    : 30;
+  const dailyAverageExpense = totalExpense / daysDiff;
 
   // Category Deep Dive Calculation
   const catSummaryMap: Record<string, { name: string; total: number; type: string }> = {};
@@ -88,37 +87,63 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
-      {/* Header & Period Filters */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
-            Laporan Keuangan & Insights 📈
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">Analisis mendalam arus kas, rata-rata pengeluaran, dan net income</p>
+      {/* Header Title */}
+      <div>
+        <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
+          Laporan Keuangan & Insights 📈
+        </h1>
+        <p className="text-xs text-slate-500 mt-1">Analisis mendalam arus kas, rata-rata pengeluaran, dan net income</p>
+      </div>
+
+      {/* Date Range Filter Control Bar */}
+      <Card className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-slate-100">
+            <Filter className="h-4 w-4 text-indigo-500" /> Filter Rentang Tanggal:
+          </div>
+          {cutoffInfo.isCutOffSet ? (
+            <div className="flex items-center gap-1.5 text-xs text-indigo-500 font-semibold">
+              <Sparkles className="h-3.5 w-3.5" />
+              Siklus Gajian (Cut-Off Tgl {cutoffInfo.cutoffDay}): {cutoffInfo.label}
+            </div>
+          ) : (
+            <div className="text-[11px] text-slate-400">
+              Periode Bulan Kalender (Tgl 1 - Akhir Bulan)
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-3">
-          <Select
-            value={selectedMonth.toString()}
-            onChange={(e) => setSelectedMonth(Number(e.target.value))}
-            options={Array.from({ length: 12 }, (_, i) => ({
-              value: (i + 1).toString(),
-              label: getMonthName(i + 1),
-            }))}
-            className="w-36"
-          />
-          <Select
-            value={selectedYear.toString()}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-            options={[
-              { value: '2025', label: '2025' },
-              { value: '2026', label: '2026' },
-              { value: '2027', label: '2027' },
-            ]}
-            className="w-28"
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-medium shrink-0">Dari:</span>
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="py-1.5 text-xs w-36"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-medium shrink-0">Sampai:</span>
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="py-1.5 text-xs w-36"
+            />
+          </div>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleResetFilter}
+            className="text-xs text-indigo-500 hover:text-indigo-400 border border-indigo-500/20"
+          >
+            <RotateCcw className="h-3.5 w-3.5 mr-1" /> Default Periode
+          </Button>
         </div>
-      </div>
+      </Card>
 
       {/* Net Cash Flow Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -12,11 +12,15 @@ import {
   PieChart,
   Scale,
   Receipt,
+  Filter,
+  RotateCcw,
+  Sparkles,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
-import { Select } from '@/components/ui/Input';
+import { Input, Select } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { formatIDR, formatDate, getMonthName, getCutOffPeriod, getCutOffDay } from '@/lib/utils';
+import { formatIDR, formatDate, getMonthName, getCutOffPeriod } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { Transaction } from '@/lib/types';
 import { PageSkeleton } from '@/components/ui/Skeleton';
@@ -24,12 +28,21 @@ import { PageSkeleton } from '@/components/ui/Skeleton';
 export default function SeparatedReportPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState<number | 'all'>(new Date().getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-  const [cutoffDay, setCutoffDay] = useState<number>(1);
+
+  // Date Range Filter State
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [cutoffInfo, setCutoffInfo] = useState<{ label: string; isCutOffSet: boolean; cutoffDay: number }>({
+    label: '',
+    isCutOffSet: false,
+    cutoffDay: 1,
+  });
 
   useEffect(() => {
-    setCutoffDay(getCutOffDay());
+    const period = getCutOffPeriod();
+    setStartDate(period.startDate);
+    setEndDate(period.endDate);
+    setCutoffInfo({ label: period.label, isCutOffSet: period.isCutOffSet, cutoffDay: period.cutoffDay });
     fetchTransactions();
   }, []);
 
@@ -46,38 +59,11 @@ export default function SeparatedReportPage() {
     }
   };
 
-  // Determine cut-off date range & label
-  let startDate = '';
-  let endDate = '';
-  let activePeriodLabel = '';
-
-  if (selectedMonth === 'all') {
-    if (cutoffDay > 1) {
-      const refEnd = new Date(Number(selectedYear), 11, cutoffDay - 1);
-      startDate = `${selectedYear}-01-${String(cutoffDay).padStart(2, '0')}`;
-      endDate = getCutOffPeriod(cutoffDay, refEnd).endDate;
-      activePeriodLabel = `Tahun ${selectedYear} (Cut-Off Tgl ${cutoffDay})`;
-    } else {
-      startDate = `${selectedYear}-01-01`;
-      endDate = `${selectedYear}-12-31`;
-      activePeriodLabel = `Semua Bulan ${selectedYear}`;
-    }
-  } else {
-    if (cutoffDay > 1) {
-      const refDate = new Date(Number(selectedYear), Number(selectedMonth) - 1, cutoffDay - 1);
-      const period = getCutOffPeriod(cutoffDay, refDate);
-      startDate = period.startDate;
-      endDate = period.endDate;
-      activePeriodLabel = `${period.label} (Cut-Off Tgl ${cutoffDay})`;
-    } else {
-      const m = Number(selectedMonth);
-      const y = Number(selectedYear);
-      const lastDay = new Date(y, m, 0).getDate();
-      startDate = `${y}-${String(m).padStart(2, '0')}-01`;
-      endDate = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-      activePeriodLabel = `${getMonthName(m)} ${y}`;
-    }
-  }
+  const handleResetFilter = () => {
+    const period = getCutOffPeriod();
+    setStartDate(period.startDate);
+    setEndDate(period.endDate);
+  };
 
   // Filter transactions by selected cut-off period date range
   const filteredTxs = transactions.filter((t) => {
@@ -130,49 +116,65 @@ export default function SeparatedReportPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
-      {/* Header & Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
-            Laporan Pemasukan & Pengeluaran Terpisah ⚖️
-          </h1>
-          <p className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-2">
-            <span>Analisis terpisah tanpa mencampurkan arus pemasukan & pengeluaran</span>
-            <span className="text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-md text-[11px]">
-              📅 {activePeriodLabel}
-            </span>
-          </p>
+      {/* Header Title */}
+      <div>
+        <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
+          Laporan Pemasukan & Pengeluaran Terpisah ⚖️
+        </h1>
+        <p className="text-xs text-slate-500 mt-1">
+          Analisis terpisah tanpa mencampurkan arus pemasukan dan pengeluaran Anda
+        </p>
+      </div>
+
+      {/* Date Range Filter Control Bar */}
+      <Card className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-slate-100">
+            <Filter className="h-4 w-4 text-indigo-500" /> Filter Rentang Tanggal:
+          </div>
+          {cutoffInfo.isCutOffSet ? (
+            <div className="flex items-center gap-1.5 text-xs text-indigo-500 font-semibold">
+              <Sparkles className="h-3.5 w-3.5" />
+              Siklus Gajian (Cut-Off Tgl {cutoffInfo.cutoffDay}): {cutoffInfo.label}
+            </div>
+          ) : (
+            <div className="text-[11px] text-slate-400">
+              Periode Bulan Kalender (Tgl 1 - Akhir Bulan)
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-3">
-          <Select
-            value={selectedMonth.toString()}
-            onChange={(e) => {
-              const val = e.target.value;
-              setSelectedMonth(val === 'all' ? 'all' : Number(val));
-            }}
-            options={[
-              { value: 'all', label: 'Semua Bulan' },
-              ...Array.from({ length: 12 }, (_, i) => ({
-                value: (i + 1).toString(),
-                label: getMonthName(i + 1),
-              })),
-            ]}
-            className="w-36"
-          />
-          <Select
-            value={selectedYear.toString()}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-            options={[
-              { value: '2024', label: '2024' },
-              { value: '2025', label: '2025' },
-              { value: '2026', label: '2026' },
-              { value: '2027', label: '2027' },
-            ]}
-            className="w-28"
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-medium shrink-0">Dari:</span>
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="py-1.5 text-xs w-36"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-medium shrink-0">Sampai:</span>
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="py-1.5 text-xs w-36"
+            />
+          </div>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleResetFilter}
+            className="text-xs text-indigo-500 hover:text-indigo-400 border border-indigo-500/20"
+          >
+            <RotateCcw className="h-3.5 w-3.5 mr-1" /> Default Periode
+          </Button>
         </div>
-      </div>
+      </Card>
 
       {/* Financial Health Snapshot Banner */}
       <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shadow-lg border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">

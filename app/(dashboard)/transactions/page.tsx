@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -25,7 +25,7 @@ import { Input, Select } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { useToast } from '@/components/providers/ToastProvider';
-import { formatIDR, formatDate } from '@/lib/utils';
+import { formatIDR, formatDate, getCutOffPeriod } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { Transaction, Category } from '@/lib/types';
 import { PageSkeleton } from '@/components/ui/Skeleton';
@@ -41,6 +41,8 @@ export default function TransactionsPage() {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [sortField, setSortField] = useState<'date' | 'amount'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -208,7 +210,15 @@ export default function TransactionsPage() {
         String(tx.amount).includes(search);
       const matchCategory = categoryFilter === 'all' || tx.category_id === categoryFilter;
       const matchType = typeFilter === 'all' || tx.category?.type === typeFilter;
-      return matchSearch && matchCategory && matchType;
+
+      let matchDate = true;
+      if (tx.date) {
+        const txDateStr = tx.date.split('T')[0];
+        if (startDate && txDateStr < startDate) matchDate = false;
+        if (endDate && txDateStr > endDate) matchDate = false;
+      }
+
+      return matchSearch && matchCategory && matchType && matchDate;
     })
     .sort((a, b) => {
       if (sortField === 'date') {
@@ -288,7 +298,7 @@ export default function TransactionsPage() {
 
       {/* Control Bar: Search, Filters, Multi-Export, Bulk Actions */}
       <Card className="p-4 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
           {/* Search Input */}
           <div className="md:col-span-2">
             <Input
@@ -318,6 +328,24 @@ export default function TransactionsPage() {
               { value: 'income', label: 'Pemasukan (+)' },
               { value: 'expense', label: 'Pengeluaran (-)' },
             ]}
+          />
+
+          {/* Filter Start Date */}
+          <Input
+            type="date"
+            placeholder="Dari Tanggal"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            title="Dari Tanggal"
+          />
+
+          {/* Filter End Date */}
+          <Input
+            type="date"
+            placeholder="Sampai Tanggal"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            title="Sampai Tanggal"
           />
         </div>
 
