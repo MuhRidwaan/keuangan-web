@@ -51,6 +51,12 @@ export default function SeparatedReportPage() {
   const [search, setSearch] = useState('');
   const [listTab, setListTab] = useState<'all' | 'income' | 'expense'>('all');
 
+  // Scroll & Pagination State
+  const [scrollMode, setScrollMode] = useState<'infinite' | 'page'>('infinite');
+  const [visibleLimit, setVisibleLimit] = useState<number>(10);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const itemsPerPage = 10;
+
   useEffect(() => {
     const period = getCutOffPeriod();
     setStartDate(period.startDate);
@@ -58,6 +64,11 @@ export default function SeparatedReportPage() {
     setCutoffInfo({ label: period.label, isCutOffSet: period.isCutOffSet, cutoffDay: period.cutoffDay });
     fetchTransactions();
   }, []);
+
+  useEffect(() => {
+    setVisibleLimit(10);
+    setCurrentPage(1);
+  }, [search, listTab, startDate, endDate]);
 
   const fetchTransactions = async () => {
     setLoading(true);
@@ -138,6 +149,22 @@ export default function SeparatedReportPage() {
       String(t.amount).includes(q)
     );
   });
+
+  // Displayed Transactions based on Scroll Mode
+  const totalPages = Math.ceil(listTxs.length / itemsPerPage) || 1;
+  const displayedTxs = scrollMode === 'infinite'
+    ? listTxs.slice(0, visibleLimit)
+    : listTxs.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const handleTableScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (scrollMode !== 'infinite') return;
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if (scrollHeight - scrollTop - clientHeight < 50) {
+      if (visibleLimit < listTxs.length) {
+        setVisibleLimit((prev) => Math.min(prev + 10, listTxs.length));
+      }
+    }
+  };
 
   // Export Excel Report (.xlsx)
   const handleExportExcel = () => {
@@ -587,8 +614,11 @@ export default function SeparatedReportPage() {
           </div>
         </div>
 
-        {/* Itemized Transactions Table */}
-        <div className="overflow-x-auto">
+        {/* Itemized Transactions Table Container */}
+        <div
+          onScroll={handleTableScroll}
+          className="max-h-[500px] overflow-y-auto overflow-x-auto pr-1 border border-slate-200 dark:border-slate-800/80 rounded-xl relative shadow-inner"
+        >
           {listTxs.length === 0 ? (
             <div className="text-center py-10 text-slate-400 space-y-2">
               <Receipt className="h-10 w-10 text-slate-500 mx-auto" />
@@ -596,22 +626,23 @@ export default function SeparatedReportPage() {
             </div>
           ) : (
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-500 uppercase tracking-wider font-bold text-[10px]">
+              <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase tracking-wider font-bold text-[10px] shadow-sm">
                 <tr>
-                  <th className="py-3 px-4 rounded-l-lg">No</th>
+                  <th className="py-3 px-4">No</th>
                   <th className="py-3 px-4">Tanggal</th>
                   <th className="py-3 px-4">Kategori</th>
                   <th className="py-3 px-4">Tipe Kas</th>
                   <th className="py-3 px-4">Catatan / Deskripsi</th>
-                  <th className="py-3 px-4 text-right rounded-r-lg">Nominal (Rp)</th>
+                  <th className="py-3 px-4 text-right">Nominal (Rp)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-medium">
-                {listTxs.map((t, idx) => {
+                {displayedTxs.map((t, idx) => {
                   const isIncome = t.category?.type === 'income';
+                  const globalIdx = scrollMode === 'infinite' ? idx + 1 : (currentPage - 1) * itemsPerPage + idx + 1;
                   return (
                     <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition">
-                      <td className="py-3 px-4 text-slate-400">{idx + 1}</td>
+                      <td className="py-3 px-4 text-slate-400">{globalIdx}</td>
                       <td className="py-3 px-4 text-slate-900 dark:text-slate-100 font-semibold">{formatDate(t.date)}</td>
                       <td className="py-3 px-4">
                         <Badge variant={isIncome ? 'success' : 'danger'}>
@@ -633,6 +664,75 @@ export default function SeparatedReportPage() {
               </tbody>
             </table>
           )}
+        </div>
+
+        {/* Scroll Pagination Footer Bar */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs">
+          <div className="text-slate-500">
+            Menampilkan <strong className="text-slate-900 dark:text-slate-100">{displayedTxs.length}</strong> dari <strong className="text-slate-900 dark:text-slate-100">{listTxs.length}</strong> transaksi terpilih
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-[11px] font-semibold border border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setScrollMode('infinite')}
+                className={`px-2.5 py-1 rounded-md transition ${scrollMode === 'infinite' ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`}
+              >
+                📜 Scroll Paginasi
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setScrollMode('page');
+                  setCurrentPage(1);
+                }}
+                className={`px-2.5 py-1 rounded-md transition ${scrollMode === 'page' ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`}
+              >
+                📄 Paginasi Halaman
+              </button>
+            </div>
+
+            {scrollMode === 'infinite' ? (
+              visibleLimit < listTxs.length && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setVisibleLimit((prev) => Math.min(prev + 10, listTxs.length))}
+                  className="text-xs"
+                >
+                  Muat Lebih Banyak (+10)
+                </Button>
+              )
+            ) : (
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="text-xs px-2.5 py-1"
+                >
+                  &lt;
+                </Button>
+                <span className="px-2 text-slate-500 font-bold">
+                  {currentPage} / {totalPages}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                  disabled={currentPage >= totalPages}
+                  className="text-xs px-2.5 py-1"
+                >
+                  &gt;
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       </Card>
     </div>
