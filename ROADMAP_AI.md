@@ -1,11 +1,34 @@
-# 🤖 Roadmap Integrasi AI - FinAgenda Pro Platform
+# 🤖 Roadmap Integrasi AI & Mobile Architecture - FinAgenda Pro Platform
 
-Dokumen perencanaan dan ide pengembangan fitur kecerdasan buatan (Artificial Intelligence) untuk platform **FinAgenda**.
+Dokumen perencanaan dan ide pengembangan fitur kecerdasan buatan (Artificial Intelligence) serta arsitektur mobile untuk platform **FinAgenda**.
 
 ---
 
-## 📌 Visi AI FinAgenda
-Mengubah FinAgenda dari aplikasi pencatatan keuangan & agenda manual menjadi **Smart Personal CFO & Productivity Assistant** yang proaktif, otomatis, dan membantu penggunanya mencapai kebebasan finansial.
+## 📌 Visi FinAgenda Platform
+Mengubah FinAgenda dari aplikasi pencatatan keuangan & agenda manual menjadi **Smart Personal CFO & Productivity Assistant** yang proaktif, otomatis, bekerja tanpa kendala internet (*offline-first*), dan membantu penggunanya mencapai kebebasan finansial.
+
+---
+
+## 🔥 Prioritas Utama: Arsitektur Mobile Android Offline-First 📱
+
+> [!IMPORTANT]
+> **Prioritas Utama Versi Android (Flutter):** Aplikasi Android harus dapat digunakan 100% secara **OFFLINE** tanpa ketergantungan sinyal internet saat pengguna ingin mencatat transaksi atau agenda baru kapan saja dan di mana saja.
+
+### 🌟 Komponen Arsitektur Offline-First & Background Sync:
+1. **Local Database Storage (Offline Storage):**
+   * Menggunakan database lokal berkecepatan tinggi pada Android (**Isar DB** / **Hive** / **SQLite**).
+   * Saat tidak ada sinyal (offline), pencatatan transaksi & agenda baru langsung tersimpan aman di HP dengan flag status `sync_status: 'pending'`.
+
+2. **Automated Background Sync Worker (Saat Sinyal Kembali):**
+   * Menggunakan `connectivity_plus` dan `workmanager` untuk memantau konektivitas jaringan secara efisien.
+   * Begitu HP terhubung kembali ke sinyal internet/Wi-Fi, background worker akan mengunggah (sync) antrean transaksi lokal ke Go API backend (`keuangan-api`) secara otomatis tanpa mengganggu aktivitas pengguna.
+
+3. **Conflict Resolution Strategy (Sinkronisasi Aman):**
+   * Memakai strategi *Last-Write-Wins* berbasis stempel waktu (`updated_at`) / UUID v4 untuk menjamin data di Android dan Server selalu konsisten tanpa duplikasi.
+
+4. **Offline AI Fallback & Queue:**
+   * Saat offline, catat cepat menggunakan parser regex/lokal di Android.
+   * Begitu online, AI (Gemini API) menyempurnakan kategorisasi & statistik secara otomatis.
 
 ---
 
@@ -58,11 +81,11 @@ Mengubah FinAgenda dari aplikasi pencatatan keuangan & agenda manual menjadi **S
 
 ---
 
-## 🛠️ Rekomendasi Stack Teknologi AI
-* **AI Provider:** Google Gemini API (`@google/genai` - Gemini 2.0 Flash / Gemini 1.5 Flash)
-* **Fitur Utama:** Vision OCR, Structured JSON Output (Schema Enforcement), & Fast Latency Response.
-* **Model Integration:** API Route Next.js 16 (`/app/api/ai/...`) ➔ Service Layer Go backend (`keuangan-api`).
+## 🛠️ Rekomendasi Stack Teknologi
+* **Mobile Stack (Android):** Flutter + Isar DB / Hive (Local Database) + WorkManager (Background Sync).
+* **AI Provider:** Google Gemini API (`@google/genai` - Gemini 2.0 Flash / Gemini 1.5 Flash).
+* **Backend:** Go (`keuangan-api`) dengan endpoint `/sync/bulk` untuk efisiensi sinkronisasi masal dari Android.
 
 ---
 
-*Dokumen ini dibuat pada: 3 September 2026 sebagai catatan eksplorasi pengembangan FinAgenda.*
+*Dokumen ini diperbarui pada: 3 September 2026 sebagai agenda utama arsitektur FinAgenda.*
