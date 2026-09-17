@@ -44,6 +44,7 @@ import { PageSkeleton } from '@/components/ui/Skeleton';
 
 export default function DashboardPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [apiTotalBalance, setApiTotalBalance] = useState<number | null>(null);
   const [agendas, setAgendas] = useState<Agenda[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,6 +83,9 @@ export default function DashboardPage() {
       const rawTxData = txRes.data?.data;
       const txItems = Array.isArray(rawTxData) ? rawTxData : (rawTxData?.items || []);
       setTransactions(txItems);
+      if (rawTxData && typeof rawTxData.total_balance === 'number') {
+        setApiTotalBalance(rawTxData.total_balance);
+      }
 
       const rawAgendaData = agendaRes.data?.data;
       setAgendas(Array.isArray(rawAgendaData) ? rawAgendaData : (rawAgendaData?.items || []));
@@ -113,7 +117,7 @@ export default function DashboardPage() {
     .filter((t) => t.category?.type === 'expense')
     .reduce((sum, t) => sum + Number(t.amount), 0);
 
-  const totalBalance = totalIncome - totalExpense;
+  const totalBalance = apiTotalBalance !== null ? apiTotalBalance : (totalIncome - totalExpense);
 
   const todayStr = new Date().toISOString().split('T')[0];
   const todayExpense = filteredTransactions
@@ -375,7 +379,7 @@ export default function DashboardPage() {
         {/* Total Saldo */}
         <Card gradientHover className="relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Saldo Periode</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Saldo (Sisa Uang)</span>
             <div className="h-9 w-9 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
               <Wallet className="h-5 w-5" />
             </div>
@@ -384,7 +388,7 @@ export default function DashboardPage() {
             {formatIDR(totalBalance)}
           </p>
           <div className="flex items-center gap-1 mt-2 text-xs font-semibold text-emerald-500">
-            <ArrowUpRight className="h-4 w-4" /> Net Financial Stance
+            <ArrowUpRight className="h-4 w-4" /> Akumulasi Sisa Uang
           </div>
         </Card>
 

@@ -45,15 +45,33 @@ export function getMonthName(monthNumber: number): string {
   return months[monthNumber - 1] || '';
 }
 
+export function getCutOffDayKey(): string {
+  if (typeof window === 'undefined') return 'fin_cutoff_day';
+  try {
+    const userStr = localStorage.getItem('keuangan_user_data');
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      const uid = user.id || user.email;
+      if (uid) return `fin_cutoff_day_${uid}`;
+    }
+  } catch {}
+  return 'fin_cutoff_day';
+}
+
 export function getCutOffDay(): number {
   if (typeof window === 'undefined') return 1;
-  const saved = localStorage.getItem('fin_cutoff_day');
-  return saved ? parseInt(saved, 10) : 1;
+  const key = getCutOffDayKey();
+  const saved = localStorage.getItem(key);
+  if (saved !== null) {
+    return parseInt(saved, 10);
+  }
+  return 1;
 }
 
 export function setCutOffDay(day: number): void {
   if (typeof window !== 'undefined') {
-    localStorage.setItem('fin_cutoff_day', day.toString());
+    const key = getCutOffDayKey();
+    localStorage.setItem(key, day.toString());
   }
 }
 
