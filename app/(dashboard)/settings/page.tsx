@@ -143,6 +143,8 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+      </Card>
+
       {/* Mobile App Download Card */}
       <Card className="space-y-4 border-emerald-500/30 bg-emerald-500/5">
         <div className="border-b border-emerald-500/20 pb-3 flex items-center justify-between">
