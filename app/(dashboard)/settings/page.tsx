@@ -1,7 +1,7 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Sun, Moon, Lock, Calendar, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, Sun, Moon, Lock, Calendar, CheckCircle2, Smartphone, Download } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -142,6 +142,33 @@ export default function SettingsPage() {
               </p>
             </div>
           </div>
+        </div>
+      {/* Mobile App Download Card */}
+      <Card className="space-y-4 border-emerald-500/30 bg-emerald-500/5">
+        <div className="border-b border-emerald-500/20 pb-3 flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <Smartphone className="h-5 w-5 text-emerald-500" /> Aplikasi Mobile Android (FinAgenda)
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Unduh aplikasi Android versi Release langsung untuk mencatat keuangan di HP Anda (mendukung Offline Mode).
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-2">
+          <div className="space-y-1">
+            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+              <CheckCircle2 className="h-4 w-4" /> Versi Release Terbaru (APK v1.0.0)
+            </span>
+            <p className="text-[11px] text-slate-400">Ukuran file ~53.9 MB • Kompatibel dengan Android 7.0 (Nougat) ke atas</p>
+          </div>
+
+          <a href="/app-release.apk" download="FinAgenda.apk" className="shrink-0">
+            <Button variant="primary" size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              <Download className="h-4 w-4 mr-2" /> Download APK Android
+            </Button>
+          </a>
         </div>
       </Card>
 

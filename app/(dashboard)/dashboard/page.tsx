@@ -15,6 +15,8 @@ import {
   Sparkles,
   Filter,
   RotateCcw,
+  Smartphone,
+  Download,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -334,6 +336,11 @@ export default function DashboardPage() {
           <p className="text-xs text-slate-500 mt-1">Pantau seluruh arus kas keuangan & agenda terdekat Anda</p>
         </div>
         <div className="flex items-center gap-3">
+          <a href="/app-release.apk" download="FinAgenda.apk">
+            <Button variant="outline" size="sm" className="border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10">
+              <Smartphone className="h-4 w-4 mr-2 text-emerald-500" /> Download App Mobile
+            </Button>
+          </a>
           <Link href="/transactions">
             <Button variant="primary" size="sm">
               <PlusCircle className="h-4 w-4 mr-2" /> Catat Transaksi

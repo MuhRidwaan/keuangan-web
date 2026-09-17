@@ -19,6 +19,7 @@ import {
   ChevronDown,
   BarChart3,
   FileSpreadsheet,
+  Smartphone,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { auth } from '@/lib/auth';
@@ -196,7 +197,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => 
       </nav>
 
       {/* Footer / Logout */}
-      <div className="p-3 border-t border-slate-200 dark:border-slate-800/80">
+      <div className="p-3 border-t border-slate-200 dark:border-slate-800/80 space-y-1">
+        <a
+          href="/app-release.apk"
+          download="FinAgenda.apk"
+          className={cn(
+            'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl font-semibold text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition duration-200 border border-emerald-500/20'
+          )}
+          title={collapsed ? 'Download App APK (Android)' : undefined}
+        >
+          <Smartphone className="h-5 w-5 shrink-0 text-emerald-500" />
+          {!collapsed && <span>Download App Mobile</span>}
+        </a>
+
         <button
           onClick={handleLogout}
           className={cn(
